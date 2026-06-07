@@ -126,9 +126,9 @@ We intentionally do not use fonio's native calendar scheduler (its event metadat
 
 ## Team
 
-- Yehor — fonio integration, orchestrator & state machine, backend
-- Olha — patient-benefit ranking model
-- (add remaining teammates / roles)
+- Yehor Larchenko
+- Olha Rybak
+- Oleksandr Kravchuk
 
 ## Submission
 
