@@ -101,7 +101,20 @@ All settings live in `.env` (git-ignored). See `.env.example` for the full list.
 
 ## Architecture & assumptions
 
-A cancellation (from the dashboard, the patient page, or a fonio inbound call) enters the orchestrator, which ranks eligible waitlist patients and calls the top one through fonio. fonio extracts a structured outcome and posts it back to a webhook; the orchestrator books the slot or advances to the next candidate. Every transition is idempotent and written to an append-only event log that drives the live dashboard. The patient dataset is synthetic; the outbound call is real when `FONIO_LIVE="true"`.
+A cancellation (from the dashboard, the patient page, or a fonio inbound call) enters the orchestrator, which ranks eligible waitlist patients and calls the top one through fonio. fonio extracts a structured outcome and posts it back to a webhook; the orchestrator books the slot or advances to the next candidate. Every transition is idempotent and written to an append-only event log that drives the live dashboard.
+
+Full technical write-up: [`REPORT.md`](REPORT.md).
+
+## What's real vs. mocked
+
+| Real | Mocked / simulated |
+|---|---|
+| Outbound phone call via fonio (`FONIO_LIVE="true"`) | The 80-patient waitlist dataset (synthetic) |
+| The full recovery loop, scoring, state machine | Phone numbers in the seed (placeholders) |
+| PostgreSQL persistence + append-only audit log | No real PMS / EHR / calendar integration (out of scope per the brief) |
+| Consent gate, idempotency, error handling, call-cap | `FONIO_LIVE="false"` simulates the call in-process for offline demos |
+
+We intentionally do not use fonio's native calendar scheduler (its event metadata isn't exposed back to the app); the system books into its own database so it owns all the metadata.
 
 ## Troubleshooting
 
