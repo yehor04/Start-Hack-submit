@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Patient {
+  id    String @id @default(cuid())
+  name  String
+  phone String
+  age   Int?
+
+  consentOutbound Boolean @default(true)
+  onWaitlist      Boolean @default(true)
+
+  urgency           String   @default("routine")
+  condition         String   @default("")
+  assignedDoctor    String   @default("")
+  timePreference    String   @default("flexible")
+  preferredTime     String   @default("09:00")
+  daysOnWaitlist    Int      @default(0)
+  assignedDate      DateTime @default(now())
+  contactAttempts   Int      @default(0)
+  lastContactResult String   @default("none")
+  timesSkipped      Int      @default(0)
+  procedureCost     Int      @default(0)
+  procedureTimeMin  Int      @default(30)
+
+  createdAt DateTime @default(now())
+  attempts  RecoveryAttempt[]
+}
+
+model Slot {
+  id                String   @id @default(cuid())
+  startsAt          DateTime
+  durationMin       Int      @default(60)
+  treatment         String
+  practitioner      String?
+  room              String?
+  status            String   @default("open")
+  valueEur          Int      @default(0)
+  bookedPatientName String?
+  recoveredBy       String?
+  createdAt         DateTime @default(now())
+
+  attempts RecoveryAttempt[]
+}
+
+model RecoveryAttempt {
+  id        String  @id @default(cuid())
+  slotId    String
+  slot      Slot    @relation(fields: [slotId], references: [id])
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  status String @default("queued")
+
+  score          Float
+  pAccept        Float?
+  evEur          Float?
+  scoreBreakdown String
+  reasonText     String?
+
+  fonioCallId    String?
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+  resolvedAt     DateTime?
+
+  @@unique([slotId, patientId])
+}
+
+model EventLog {
+  id        String   @id @default(cuid())
+  type      String
+  slotId    String?
+  patientId String?
+  attemptId String?
+  payload   String
+  createdAt DateTime @default(now())
+}
