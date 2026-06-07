@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { rankCandidates } from "./orchestrator";
+import { getRankedStable } from "./orchestrator";
 
 export async function getTodaySchedule() {
   const start = new Date();
@@ -31,7 +31,7 @@ export async function getActiveRecovery() {
       : null) ?? (await db.slot.findFirst({ where: { status: { in: ["filling", "escalated"] } } }));
   if (!slot) return null;
 
-  const ranked = await rankCandidates(slot.id);
+  const ranked = await getRankedStable(slot.id);
   const candidates = ranked.map((r) => ({
     name: r.name,
     score: r.scored.score,
