@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { rankPool, type PatientLite, type Scored } from "./scoring";
-import { triggerCall } from "./fonio";
+import { triggerCall, cancelCall } from "./fonio";
 
 export type Outcome =
   | "yes"
@@ -150,6 +150,14 @@ export async function callNext(slotId: string) {
     if ((e as { code?: string }).code === "P2002") return;
     throw e;
   }
+
+  const slotNow = await db.slot.findUnique({ where: { id: slotId } });
+  if (!slotNow || slotNow.status === "stopped" || slotNow.status === "escalated" || slotNow.status === "filled") {
+    await db.recoveryAttempt.update({ where: { id: attempt.id }, data: { status: "failed", resolvedAt: new Date() } });
+    console.log(`🛑 slot ${slotId} is ${slotNow?.status ?? "gone"} — aborting call for ${next.name}`);
+    return;
+  }
+
   await log("call_started", { slotId, patient: next.name, attemptId: attempt.id });
   console.log(`\n📞 CALLING #${priorAttempts + 1}: ${next.name}  →  ${next.phone}  (attempt ${attempt.id})`);
   await triggerCall({
@@ -261,6 +269,18 @@ export async function stopRecovery(slotId: string) {
     data: { type: "stopped", slotId, payload: JSON.stringify({ slotId, why: "stopped manually by staff" }) },
   });
   console.log(`🛑 RECOVERY STOPPED manually for slot ${slotId}`);
+
+  const active = await db.recoveryAttempt.findFirst({
+    where: { slotId, status: "calling", resolvedAt: null },
+  });
+  if (active) {
+    await db.recoveryAttempt.update({
+      where: { id: active.id },
+      data: { status: "failed", resolvedAt: new Date() },
+    });
+
+    cancelCall(active.fonioCallId, active.id).catch(() => {});
+  }
 }
 
 async function escalate(slotId: string, why: string) {

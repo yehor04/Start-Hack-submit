@@ -9,6 +9,8 @@ const FROM_NUMBER = process.env.FONIO_FROM_NUMBER || "";
 const AGENT_ID = process.env.FONIO_AGENT_ID || "";
 const TIMEOUT_MS = 15_000;
 
+const pendingSimCalls = new Map<string, ReturnType<typeof setTimeout>>();
+
 export type TriggerOpts = {
   attemptId: string;
   slotId: string;
@@ -60,12 +62,14 @@ export async function triggerCall(opts: TriggerOpts): Promise<void> {
 
   const delay = 4000 + Math.random() * 3000;
   const outcome = simulateOutcome(opts.pAccept);
-  setTimeout(() => {
+  const timer = setTimeout(() => {
+    pendingSimCalls.delete(opts.attemptId);
 
     import("./orchestrator")
       .then((m) => m.handleOutcome(opts.attemptId, outcome))
       .catch((err) => console.error("[fonio sim] outcome failed", err));
   }, delay);
+  pendingSimCalls.set(opts.attemptId, timer);
 }
 
 async function triggerLiveCall(opts: TriggerOpts): Promise<void> {
@@ -115,12 +119,19 @@ async function triggerLiveCall(opts: TriggerOpts): Promise<void> {
       body: JSON.stringify(body),
       signal: ctrl.signal,
     });
-    const data = (await res.json().catch(() => ({}))) as { status?: string; message?: string };
+    const rawText = await res.text().catch(() => "");
+    console.log(`[fonio] outbound_call raw response: ${rawText}`);
+    let data: Record<string, unknown> = {};
+    try { data = JSON.parse(rawText); } catch {}
     if (!res.ok || data?.status === "error") {
       console.error(`❌ fonio API rejected — HTTP ${res.status}`, data);
       return failAttempt(opts.attemptId);
     }
-    console.log(`✅ fonio API ${res.status} — ${data?.status}: ${data?.message}  → ${toNumber} is ringing\n`);
+    const fonioCallId = (data.id ?? data.callId ?? data.call_id ?? data.callid ?? null) as string | null;
+    if (fonioCallId) {
+      await db.recoveryAttempt.update({ where: { id: opts.attemptId }, data: { fonioCallId } }).catch(() => {});
+    }
+    console.log(`✅ fonio API ${res.status} — ${data?.status}: ${data?.message}  → ${toNumber} is ringing (callId=${fonioCallId})\n`);
   } catch (err) {
     console.error("[fonio] outbound_call threw", err);
     return failAttempt(opts.attemptId);
@@ -135,6 +146,14 @@ async function failAttempt(attemptId: string): Promise<void> {
     await m.handleOutcome(attemptId, "failed");
   } catch (err) {
     console.error("[fonio] failAttempt could not advance the loop", err);
+  }
+}
+
+export async function cancelCall(_fonioCallId: string | null, attemptId?: string): Promise<void> {
+  if (!LIVE && attemptId && pendingSimCalls.has(attemptId)) {
+    clearTimeout(pendingSimCalls.get(attemptId)!);
+    pendingSimCalls.delete(attemptId);
+    console.log(`🔕 SIM: cancelled pending call timer for attempt ${attemptId}`);
   }
 }
 
